@@ -1,6 +1,7 @@
 package main
 
 import (
+	"datelist-test/models"
 	"fmt"
 	"strings"
 	"time"
@@ -11,24 +12,13 @@ import (
 
 const ShortDayFormat = "2006-01-02"
 
-type SearchStruct struct {
-	FullMonths []string
-	Days       []string
-}
-
-type MonthTypes struct {
-	Even mapset.Set[string]
-	Odd  mapset.Set[string]
-}
+//var result models.SearchStruct
 
 func main() {
 	start_date := "2020-12-25"
 	end_date := "2021-02-17"
 
-	var result SearchStruct
-
-	// Slice of months, data can be repeated, helps to know if month is complete or not
-	var dates []string
+	var result models.SearchStruct
 
 	// This set contains all months to be analyzed for adding to search struct, even if no full months : YYYY-MM
 	dateSet := mapset.NewSet[string]()
@@ -43,20 +33,17 @@ func main() {
 	from_Param, _ := time.Parse(ShortDayFormat, start_date)
 	until_Param, _ := time.Parse(ShortDayFormat, end_date)
 
+	boundsMapd := make(map[string]time.Time)
+	boundsMapd["from"] = from_Param
+	boundsMapd["until"] = until_Param
+
 	// This cycle creates all days between the start param and end param
-	for d := from_Param; !d.After(until_Param); d = d.AddDate(0, 0, 1) {
-		day := d.Format(ShortDayFormat)
-		slicedDay := strings.Split(day, "-")
-		month := monthFormat(slicedDay)
-		dates = append(dates, month)
-		dateSet.Add(month)
-		daySet.Add(day)
-	}
+	SetDaysRange(boundsMapd, &result, dateSet, daySet)
 
 	// This cycle adds a month to the fullMonth slice if day range is full
 	for _, item := range dateSet.ToSlice() {
 		// Evaluates month for adding to struct
-		EvaluateMonths(dates, item, &result, fullMonthSet)
+		evaluateMonths(item, &result, fullMonthSet)
 	}
 
 	// This cycle adds to single day struct if YYYY-MM side is not on the full month struct
@@ -78,36 +65,50 @@ func main() {
 	fmt.Println(result.Days)
 }
 
+func SetDaysRange(boundsMapd map[string]time.Time, result *models.SearchStruct, dateSet mapset.Set[string], daySet mapset.Set[string]) {
+	from_Param := boundsMapd["from"]
+	until_Param := boundsMapd["until"]
+	for t := from_Param; !t.After(until_Param); t = t.AddDate(0, 0, 1) {
+		day := t.Format(ShortDayFormat)
+		slicedDay := strings.Split(day, "-")
+		month := monthFormat(slicedDay)
+		//dates = append(dates, month)
+		result.AppendToMonth(month)
+		dateSet.Add(month)
+		daySet.Add(day)
+	}
+}
+
 // Evaluates month type for adding to struct according to if it is even, odd or february
-func EvaluateMonths(dates []string, item string, result *SearchStruct, fullMonthSet mapset.Set[string]) {
-	monthTypes := FillMonthStruct()
+func evaluateMonths(item string, result *models.SearchStruct, fullMonthSet mapset.Set[string]) {
+	monthTypes := fillMonthStruct()
 	m := strings.Split(item, "-")
 	month := m[1]
 	if month == "02" {
-		count := CountDays(dates, item)
+		count := countDays(result.AllDays, item)
 		if count == 28 || count == 29 {
 			addDate(item, result, fullMonthSet)
 		}
 	} else {
 		if monthTypes.Even.Contains(month) {
-			EvaluateMonth(dates, 30, item, result, fullMonthSet)
+			evaluateMonth(30, item, result, fullMonthSet)
 		}
 		if monthTypes.Odd.Contains(month) {
-			EvaluateMonth(dates, 31, item, result, fullMonthSet)
+			evaluateMonth(31, item, result, fullMonthSet)
 		}
 	}
 }
 
 // Evaluates single month for adding to struct whether it is even or odd
-func EvaluateMonth(dates []string, monthDays int, item string, result *SearchStruct, fullMonthSet mapset.Set[string]) {
-	count := CountDays(dates, item)
+func evaluateMonth(monthDays int, item string, result *models.SearchStruct, fullMonthSet mapset.Set[string]) {
+	count := countDays(result.AllDays, item)
 	if count == monthDays {
 		addDate(item, result, fullMonthSet)
 	}
 }
 
 // Counts repeated dates with linq style
-func CountDays(dates []string, item string) int {
+func countDays(dates []string, item string) int {
 	return From(dates).
 		CountWith(
 			func(i interface{}) bool { return i == item },
@@ -115,22 +116,14 @@ func CountDays(dates []string, item string) int {
 }
 
 // Adds date in format YYYY-MM to both struct and set
-func addDate(item string, result *SearchStruct, fullMonthSet mapset.Set[string]) {
+func addDate(item string, result *models.SearchStruct, fullMonthSet mapset.Set[string]) {
 	result.AddMonth(item)
 	fullMonthSet.Add(item)
 }
 
-func (result *SearchStruct) AddMonth(item string) {
-	result.FullMonths = append(result.FullMonths, item)
-}
-
-func (result *SearchStruct) AddDay(item string) {
-	result.Days = append(result.Days, item)
-}
-
 // Fills month types struct according to quantity of days they have
-func FillMonthStruct() *MonthTypes {
-	var monthTypes MonthTypes
+func fillMonthStruct() *models.MonthTypes {
+	var monthTypes models.MonthTypes
 	monthTypes.Even = mapset.NewSet[string]("04", "06", "09", "11")
 	monthTypes.Odd = mapset.NewSet[string]("01", "03", "05", "07", "08", "10", "12")
 	return &monthTypes
